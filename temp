@@ -1,0 +1,210 @@
+
+function Import-CAOnboarding{
+
+ <#
+    .SYNOPSIS
+        Adds list of safe members with their permission to the Safe.
+    .DESCRIPTION
+        It utilises PsPAS module to add safe members based on the list of memebrs given as input CSV. SafeName, MemeberName, Expirartion date and the permission to be set are provided as CSV list.
+    .EXAMPLE
+        PS> Import-CAOnboarding
+    .EXAMPLE
+        PS> Import-CAOnboarding
+    .INPUTS
+        CSV
+    .NOTES
+        Version         : 1.0
+        Creation Date   : 05/09/2023
+        Purpose/Change  : Initial development
+   
+    .LINK
+        https://pspas.pspete.dev/commands/Add-PASSafeMember
+    .LINK
+        https://docs.cyberark.com/Product-Doc/OnlineHelp/PAS/Latest/en/Content/WebServices/Add%20Safe%20Member.htm
+#>
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        [hashtable]$config
+    )
+    
+    #Define CSV file path 
+    $Global:LogPath = "$global:targetFolder\Logs\CAOnboardingLogs.LOG"
+    Write-Log -Object ("-"*30 + ' Started CA Onboarding ' + "-"*30 ) -NoPrint
+
+    try{        
+       
+        Remove-Variable CAOnboardingInput -Force -ErrorAction SilentlyContinue
+        
+        Import-Module -Name ActiveDirectory -ErrorAction SilentlyContinue
+        if($null -eq (Get-Module -Name ActiveDirectory -ErrorAction SilentlyContinue)){
+            throw 'ActiveDirectory module not found.'
+        }
+        $CAOnboardingInput = Get-FileName -InitialDirectory $PWD -Filter "CSV Files (*.csv)|*.csv" -WindowTitle "CA Onboarding Details"
+
+        Write-Log -Object "Selected input csv '$CAOnboardingInput'."
+        
+        $RequiedColumns = @('NTID','TicketSystem','TicketNumber')
+    
+        $CAOnboardingList = Test-SelectedInputCSV -FilePath $safeMemebrsList -RequiedColumns $RequiedColumns
+
+        if($null -eq $CAOnboardingList){
+            Write-Log -Object "No inputs in selected CSV." -NoPrint
+            return
+        }
+
+        Write-Progress -Activity "Getting Information..." -PercentComplete -1
+        Write-Log "Input CSV imported."
+        #Loop through each memebers to add from input
+        $SuccessfulCAAccounts = @()
+        $startDateTime = Get-Date
+        #Verify accounts
+        foreach ($CAItem in $CAOnboardingList)
+        {                     
+            # Initialize Variables
+            $NTID = $CAItem.NTID
+            $CA_NTID = ($config.CAUserInitials + $NTID).ToLower()
+            $CARK_Group = $config.CAGroupInitials + $NTID
+            $SafeName =  ($config.CAGroupInitials + "NT_CA_$NTID").ToUpper()
+
+            Write-Log "-------- Checking account pre-requisits for $NTID ---------" -ForegroundColor cyan
+            # Get AD Objects
+
+            try{
+
+                $NTID_Object = (Get-ADUser -Identity $NTID -errorAction Stop).distinguishedName
+                if(($NTID_Object|Measure-Object).Count -ne 1){
+                    Throw "$(($NTID_Object|Measure-Object).Count) ADUser found for '$NTID'."
+                }
+
+                $CA_NTID_Object = Get-ADUser -Filter {samAccountName -eq $CA_NTID} -errorAction Stop
+
+                if(($CA_NTID_Object|Measure-Object).Count -ne 1){
+                    Throw "$(($CA_NTID_Object|Measure-Object).Count) ADUser found for '$CA_NTID'."
+                }
+                    
+                $CARK_Group_Object = Get-ADGroup -Filter {samAccountName -eq $CARK_Group} -errorAction Stop
+
+                if(($NTID_Object|Measure-Object).Count -ne 1){
+                    Throw "$(($NTID_Object|Measure-Object).Count) ADGroup found for '$CARK_Group'."
+                }
+
+                $CARK_Group_Members = Get-ADGroupMember -Identity $CARK_Group  -errorAction Stop| Select -ExpandProperty distinguishedName
+
+                if (($CARK_Group_Members|Measure-Object).Count -ne 1) {                        
+                    # Check if CARK group contains exactly one member
+                    throw "$(($CARK_Group_Members|Measure-Object).Count) member found in $CARK_Group."
+                }
+                    
+                if ($CARK_Group_Members -inotcontains $NTID_Object) {                    
+                    # Check if CARK Group contains the correct member                                  
+                    throw "$NTID is not a member of $CARK_Group AdGroup."
+                }                    
+                
+                # Log success or failure                
+                Write-Log -Object "All Prerequisit checks passed for $CA_NTID." -ForegroundColor Green
+                
+                $SafeExist = Get-PASSafe -SafeName $SafeName -ErrorAction Stop
+                if($SafeExist -eq $null){
+                    $SafeExist = Add-PASSafe -SafeName $SafeName -Description "$($NTID) is the owner of this safe. $($CAItem.ticketSystem) $($CAItem.ticketNumber)" -OLACEnabled $false -ManagingCPM $Global:config.CASafeCPMUser -NumberOfVersionsRetention $Global:config.CASafeNumVersionRetention
+                    Write-Log "Safe $($SafeName) created successfully "
+                }else{
+                    Write-Log "Safe $($SafeName) already exist"
+                }
+                
+                Write-Host "Adding Default Safe members to $($SafeName)"
+            
+                foreach ($Member in $config.DefaultSafeMembers) {
+                    Add-PASSafeMember -SafeName $SafeName @Member    
+                    Write-Log "Successfully added $($Member.MemberName) member to safe $SafeName."
+                } 
+                                 
+                Write-Log "Onboarding $($account.CA_NTID)"          
+                $resultAccount = Get-PASAccount -safeName $SafeName | Where {$_.userName -eq $CA_NTID }      
+
+                if(($resultAccount|Measure).Count -eq 1){
+                    Write-Log "Account already exist with Id = $($resultAccount.id), Address = $($resultAccount.address), Username = $($resultAccount.Username), PlatformId =  = $($resultAccount.platformID)."
+                }elseif(($resultAccount|Measure).Count -eq 1){                  
+                    $resultAccount = Add-PASAccount -SafeName $SafeName -address $Global:config.CAAccountAddress -userName $CA_NTID -platformID $Global:config.CAAccountPlatformID -automaticManagementEnabled $true
+                }else{
+                    throw "Error : Multiple accounts found. count $(($resultAccount|Measure).Count) "
+                }
+                                
+                $AccountID = $resultAccount.id
+                Write-Log "$($CA_NTID) onboarded successfully -- AccountID = $AccountID"            
+
+                Write-Log "Marking $($CA_NTID) for reconciliation"
+                Invoke-PASCPMOperation -AccountID $AccountID -ReconcileTask -ErrorAction Stop
+                Write-Log "Successfully marked $($CA_NTID) for reconciliation"
+                                
+                $SuccessfulCAAccounts += [PSCustomObject]@{
+                    NTID = $NTID
+                    CA_NTID = $CA_NTID
+                    CARK_Group = $CARK_Group
+                    AccountID = $AccountID
+                }
+
+            } catch{
+                # Catch any errors from above
+                Write-Log "Error: [$($NTID)] - $($_.Exception.Message)" -ForegroundColor Yellow
+            }                        
+        }        
+        #----------------------- Sleep for 7 minutes -----------------------
+
+        $sleepTime = 420
+        Write-Log ("ATTTENTION: Pausing script for $sleepTime seconds to allow reconciliation to complete. The script will resume at " + (Get-Date).AddSeconds($sleepTime).ToString("HH:mm:ss")) -ForegroundColor Yellow        
+        Start-Sleep -Seconds $sleepTime        
+        $date = (Get-Date -Day 1 -Month 1 -Year 1970).Date        
+
+        foreach ($account in $SuccessfulCAAccounts)
+        {
+            try{
+                #VerifyRecon
+                Write-Host "[$($account.NTID)] Confirming successful reconciliation for $($account.CA_NTID)"
+                $accountDetails = Get-PASAccount -id $account.AccountID -ErrorAction Stop
+
+                $reconcilied = $false
+                if(-not([string]::IsNullOrWhiteSpace($accountDetails.secretManagement.lastReconciledTime) )){
+                    if($date.AddSeconds($accountDetails.secretManagement.lastReconciledTime) -gt $startDateTime){
+                        $reconcilied = $true
+                    }
+                } 
+                
+                # Check if reconcilied
+                if($reconcilied -eq $true)
+                {
+                    throw "According to the PasswordLastSet AD attribute, reconciliation failed for $($account.CA_NTID)."
+                } else {
+                    Write-Log "[$($account.NTID)] Successfully reconciled $($account.CA_NTID)" 
+                }
+                    
+                #AddCARKGroup
+                Write-Log "Adding $($account.CARK_Group) to safe $($account.SafeName)"
+                Add-SafeMember -SafeName $account.SafeName -MemberName $account.CARK_Group -SearchIn $config.SafeMembersSearchIn -UseAccounts $true -ListAccounts $true -ViewAuditLog $true -InitiateCPMAccountManagementOperations $true
+                Write-Log "Successfully added $($account.CARK_Group) to $($account.SafeName) safe"
+
+                #RemoveUploadUser
+                Write-Log "Removing $($Global:Session.Username) from $($account.SafeName)"
+                Remove-PASSafeMember -SafeName $account.SafeName -MemberName $(Get-PASSession).User -ErrorAction Stop
+                Write-Log "Successfully removed $($(Get-PASSession).User) from $($account.SafeName)"
+            } catch{
+                # Catch any errors from above
+                Write-Log "Error: [$($NTID)] $($_.Exception.Message)" -ForegroundColor Yellow
+            }     
+        }
+
+    }catch{
+        #Handle exceptions for API failures and otjer failures
+        Write-Progress -Activity "Issue Occured..." -Complete
+        Write-Log "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    }
+    
+}
+
+function Write-Log{
+    Param([parameter(Position=0)]$Object, [String]$ForegroundColor='White', [Switch]$NoPrint)
+    if(-Not($NoPrint.IsPresent -eq $true)){
+       Write-Host -Object $Object -ForegroundColor $ForegroundColor
+    }
+    $(Get-Date).ToString('dd-MM-yyyy HH:mm:ss') + ' - ' + $Object | Add-Content -Path $global:logFileName -Force
+}
