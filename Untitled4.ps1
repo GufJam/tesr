@@ -1,4 +1,4 @@
-﻿
+
 function Get-FileName
 {
 <#
@@ -281,7 +281,7 @@ try{
     if($CurrPath -eq 'C:\Windows\System32'){ Set-Location -Path "$env:USERPROFILE\downloads"; $CurrPath = "$env:USERPROFILE\downloads" }
     Write-Host 'Please select csv containing list of SamAccountName ' -ForegroundColor Cyan
     #echo $CurrPath
-    $FilePath = Get-FileName -WindowTitle 'List of AdGroup SamAccounts' -InitialDirectory $CurrPath -Filter "CSV Files (*.csv)|*.csv"
+    $FilePath = Get-FileName -WindowTitle 'List of SamAccounts' -InitialDirectory $CurrPath -Filter "CSV Files (*.csv)|*.csv"
     #Validate File Name
     if ($null -eq $FilePath -or $FilePath.trim().Length -eq 0) {
         Write-host "No File Selected. " -ForegroundColor Yellow
