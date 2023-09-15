@@ -1,94 +1,6 @@
-﻿
+
 function Get-FileName
 {
-<#
-.SYNOPSIS
-   Show an Open File Dialog and return the file selected by the user
-
-.DESCRIPTION
-   Show an Open File Dialog and return the file selected by the user
-
-.PARAMETER WindowTitle
-   Message Box title
-   Mandatory - [String]
-
-.PARAMETER InitialDirectory
-   Initial Directory for browsing
-   Mandatory - [string]
-
-.PARAMETER Filter
-   Filter to apply
-   Optional - [string]
-
-.PARAMETER AllowMultiSelect
-   Allow multi file selection
-   Optional - switch
-
- .EXAMPLE
-   Get-FileName
-    cmdlet Get-FileName at position 1 of the command pipeline
-    Provide values for the following parameters:
-    WindowTitle: My Dialog Box
-    InitialDirectory: c:\temp
-    C:\Temp\42258.txt
-
-    No passthru paramater then function requires the mandatory parameters (WindowsTitle and InitialDirectory)
-
-.EXAMPLE
-   Get-FileName -WindowTitle MyDialogBox -InitialDirectory c:\temp
-   C:\Temp\41553.txt
-
-   Choose only one file. All files extensions are allowed
-
-.EXAMPLE
-   Get-FileName -WindowTitle MyDialogBox -InitialDirectory c:\temp -AllowMultiSelect
-   C:\Temp\8544.txt
-   C:\Temp\42258.txt
-
-   Choose multiple files. All files are allowed
-
-.EXAMPLE
-   Get-FileName -WindowTitle MyDialogBox -InitialDirectory c:\temp -AllowMultiSelect -Filter "text file (*.txt) | *.txt"
-   C:\Temp\AES_PASSWORD_FILE.txt
-
-   Choose multiple files but only one specific extension (here : .txt) is allowed
-
-.EXAMPLE
-   Get-FileName -WindowTitle MyDialogBox -InitialDirectory c:\temp -AllowMultiSelect -Filter "Text files (*.txt)|*.txt| csv files (*.csv)|*.csv | log files (*.log) | *.log"
-   C:\Temp\logrobo.log
-   C:\Temp\mylogfile.log
-
-   Choose multiple file with the same extension
-
-.EXAMPLE
-   Get-FileName -WindowTitle MyDialogBox -InitialDirectory c:\temp -AllowMultiSelect -Filter "selected extensions (*.txt, *.log) | *.txt;*.log"
-   C:\Temp\IPAddresses.txt
-   C:\Temp\log.log
-
-   Choose multiple file with different extensions
-   Nota :It's important to have no white space in the extension name if you want to show them
-
-.EXAMPLE
- Get-Help Get-FileName -Full
-
-.INPUTS
-   System.String
-   System.Management.Automation.SwitchParameter
-
-.OUTPUTS
-   System.String
-
-.NOTESs
-  Version         : 1.0
-  Author          : O. FERRIERE
-  Creation Date   : 11/09/2019
-  Purpose/Change  : Initial development
-
-  Based on different pages :
-   mainly based on https://blog.danskingdom.com/powershell-multi-line-input-box-dialog-open-file-dialog-folder-browser-dialog-input-box-and-message-box/
-   https://code.adonline.id.au/folder-file-browser-dialogues-powershell/
-   https://thomasrayner.ca/open-file-dialog-box-in-powershell/
-#>
     [CmdletBinding()]
     [OutputType([string])]
     Param
@@ -273,10 +185,10 @@ function Test-SelectedInputCSV{
 }
 
 try{
-      Import-Module -Name ActiveDirectory -ErrorAction SilentlyContinue
-      if($null -eq (Get-Module -Name ActiveDirectory -ErrorAction SilentlyContinue)){
-            throw 'ActiveDirectory module not found.'
-       }
+    Import-Module -Name ActiveDirectory -ErrorAction SilentlyContinue
+    if($null -eq (Get-Module -Name ActiveDirectory -ErrorAction SilentlyContinue)){
+        throw 'ActiveDirectory module not found.'
+    }
     $CurrPath = $PWD.Path 
     if($CurrPath -eq 'C:\Windows\System32'){ Set-Location -Path "$env:USERPROFILE\downloads"; $CurrPath = "$env:USERPROFILE\downloads" }
     Write-Host 'Please select csv containing list of SamAccountName ' -ForegroundColor Cyan
@@ -323,18 +235,22 @@ try{
                             Members = ''
                             MemberType = ''
                             MemberEnabled = ''
+                            ManagedByEmail = ''
                       }
         }else{
             $ManagedBy = ''
             $ManagedByEnabled = ''
+            $ManagedByEmail = ''
             if( $AdGroup.ManagedBy -ne $null){
                 $ManagedBy = $AdGroup.ManagedBy
-                $ManagedByEnabled = Get-ADUser -Identity $ManagedBy -Properties Enabled|Select -ExpandProperty Enabled
+                $tempAdUser = Get-ADUser -Identity $ManagedBy -Properties Enabled, EmailAddress 
+                $ManagedByEnabled =$tempAdUser.Enabled 
+                $ManagedByEmail =$tempAdUser.EmailAddress 
             }
             $FirstMember =  "$($AdGroup.Members | Select -First 1)"
             $FirstMemberEnabled = ''
             $FirstMemberType = ''
-            if( $FirstMember -ne $null){
+            if(-Not([String]::IsNullOrWhiteSpace($FirstMember))){
                  if([String]::IsNullOrWhiteSpace($Domain)){
                     $FirstMemberType = ( Get-ADObject -Identity $FirstMember).ObjectClass 
                  }else{
@@ -358,6 +274,7 @@ try{
                             Members = $FirstMember
                             MemberType = $FirstMemberType
                             MemberEnabled = $FirstMemberEnabled
+                            ManagedByEmail = $ManagedByEmail
                       }
              foreach ($mem in $($AdGroup.Members | Select -Skip 1))
              {
@@ -385,6 +302,7 @@ try{
                             Members = $mem
                             MemberType = $MemType
                             MemberEnabled = $MemEnabled
+                            ManagedByEmail = $ManagedByEmail
                       }
              }
         }
@@ -405,6 +323,5 @@ try{
 }catch{
     Write-Host "ERROR: $_" -ForegroundColor Red
 }finally{
-Import-Csv $path|ogv
     Read-Host "Press enter to exit." 
 }
