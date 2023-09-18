@@ -1,4 +1,4 @@
-﻿
+
 function Read-SingleInputBoxDialog([string]$Message, [string]$WindowTitle, [string]$DefaultText, [Switch]$Password)
 {
     Add-Type -AssemblyName System.Windows.Forms
@@ -82,29 +82,38 @@ try{
     $Domain = $null
     $Domain = Read-SingleInputBoxDialog -Message "Please provide the Domain name for ActiveDirectory." -WindowTitle 'Domain name' 
     try{
-        $OU = $null
+        $OUs = $null
         if([String]::IsNullOrWhiteSpace($Domain)){
-            $OU = Get-ADOrganizationalUnit -Identity $OUName -ErrorAction Stop
+            $OUs = Get-ADOrganizationalUnit -SearchBase $OUName -SearchScope Subtree -Filter * -ErrorAction Stop
         }else{
-            $OU = Get-ADOrganizationalUnit -Identity $OUName -Server $Domain -ErrorAction Stop                
+            $OUs = Get-ADOrganizationalUnit -SearchBase $OUName -SearchScope Subtree -Filter * -Server $Domain -ErrorAction Stop                
         }
     }catch
     {   
         throw $_.Exception.Message
     }
-    if($OU -eq $null){throw "No OU found with DN = $OUName" }
+    if($OUs -eq $null){throw "No OU found with DN = $OUName" }
+
+    Write-Host "Found $($OUs.Count) results including subOUs" -ForegroundColor Cyan
     $csvuser = @()
     $csvGroup = @()
     $Userproperties =  @('PasswordLastSet', 'Description', 'DistinguishedName', 'Enabled', 'MemberOf')
     $Groupproperties =  @('MemberOf', 'Description', 'ManagedBy', 'Members', 'DistinguishedName')
-    
-    #ADUsers
-    $ADUsers = $null
-    if([String]::IsNullOrWhiteSpace($Domain)){
-        $ADUsers = Get-ADUser -SearchBase $ou.DistinguishedName -Filter * -Properties $Userproperties -ErrorAction Stop
-    }else{
-        $ADUsers = Get-ADUser -SearchBase $ou.DistinguishedName -Filter * -Properties $Userproperties -Server $Domain -ErrorAction Stop                
+    $ADUsers = @()
+
+    foreach ($ou in $OUs)
+    {
+        Write-Host "Getting AdUsers from searchbase $($ou.DistinguishedName)" -ForegroundColor Cyan
+        #ADUsers
+        $tempUser = $null
+        if([String]::IsNullOrWhiteSpace($Domain)){
+            $tempUser = Get-ADUser -SearchBase $ou.DistinguishedName -SearchScope OneLevel -Filter * -Properties $Userproperties -ResultPageSize 1000 -ErrorAction Stop
+        }else{
+            $tempUser = Get-ADUser -SearchBase $ou.DistinguishedName -SearchScope OneLevel -Filter * -Properties $Userproperties -ResultPageSize 1000 -Server $Domain -ErrorAction Stop                
+        }
+        if($null -ne $tempUser){ $ADUsers += $tempUser}
     }
+
     foreach ($ADUser in $ADUsers)
     {
         $pwdtime = ''
@@ -138,12 +147,19 @@ try{
         
     }
     #ADGroup
-    $ADGroups = $null
-    if([String]::IsNullOrWhiteSpace($Domain)){
-        $ADGroups = Get-ADGroup -SearchBase $ou.DistinguishedName -Filter * -Properties $Groupproperties -ErrorAction Stop
-    }else{
-        $ADGroups = Get-ADGroup -SearchBase $ou.DistinguishedName -Filter * -Properties $Groupproperties -Server $Domain -ErrorAction Stop                
+    $ADGroups = $()
+    foreach ($ou in $OUs)
+    {
+        Write-Host "Getting ADGroups from searchbase $($ou.DistinguishedName)" -ForegroundColor Cyan
+        $tempGroup = $null
+        if([String]::IsNullOrWhiteSpace($Domain)){
+            $tempGroup = Get-ADGroup -SearchBase $ou.DistinguishedName -SearchScope OneLevel -Filter * -Properties $Groupproperties -ResultPageSize 1000 -ErrorAction Stop
+        }else{
+            $tempGroup = Get-ADGroup -SearchBase $ou.DistinguishedName -SearchScope OneLevel -Filter * -Properties $Groupproperties -ResultPageSize 1000 -Server $Domain -ErrorAction Stop                
+        }
+        if($null -ne $tempGroup){ $ADGroups += $tempGroup}
     }
+   
     foreach ($ADGroup in $ADGroups)
     {
         $ManagedBy = ''
@@ -217,7 +233,7 @@ try{
 
     #export result
     if($csvuser.count -eq 0){
-        Write-Host "No Accounts found under OU $OuName."
+        Write-Host "No Accounts found under OU and its sub OUs $OuName."
     }else{
          try{
             $path = "$CurrPath\AccountsReport_$(Get-Date -Format yyyyMMdd-hhmmss)_OU_$($OuName).csv" 
@@ -229,18 +245,18 @@ try{
     }
     
     if($csvGroup.count -eq 0){
-        Write-Host "No Groups found under OU $OuName."
+        Write-Host "No Groups found under OU and its sub OUs $OuName."
     }else{
          try{
             $path = "$CurrPath\GroupReport_$(Get-Date -Format yyyyMMdd-hhmmss)_OU_$($OuName).csv" 
             $csvGroup | Export-Csv -Path $path -NoTypeInformation -ErrorAction Stop
             Write-Host "Groups Results saved to '$((Resolve-Path $Path).Path)'. " -ForegroundColor Green
         }catch{
-            Write-Host "Failed to create CSV. $($_.Exception.Message)" -ForegroundColor Red
+            throw "Failed to create CSV. $($_.Exception.Message)" 
         }
     }
 }catch{
-    Write-Host "ERROR: $_" -ForegroundColor Red
+    Write-Host "ERROR: $($_.Exception.Message). Line $($_.InvocationInfo.ScriptLineNumber)" -ForegroundColor Red
 }finally{
     Read-Host "Press enter to exit." 
 }
