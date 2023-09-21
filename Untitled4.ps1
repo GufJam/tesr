@@ -158,7 +158,7 @@ function Initiate-CAOnboarding{
                 }
 
                 if($SafeExist -eq $null){
-                    $SafeExist = Add-PASSafe -SafeName $SafeName -Description "$($NTID) is the owner of this safe. $($CAItem.ticketSystem) $($CAItem.ticketNumber)" -OLACEnabled $false -ManagingCPM $Global:config.CASafeCPMUser -NumberOfVersionsRetention $Global:config.CASafeNumVersionRetention -ErrorAction Stop
+                    $SafeExist = Add-PASSafe -SafeName $SafeName -Description "$($NTID) is the owner of this safe. $($CAItem.ticketSystem) $($CAItem.ticketNumber)" -OLACEnabled $false -ManagingCPM $config.CASafeCPMUser -NumberOfVersionsRetention $config.CASafeNumVersionRetention -ErrorAction Stop
                     Write-Log "Safe $($SafeName) created successfully "
                 }else{
                     Write-Log "Safe $($SafeName) already exist"
@@ -186,7 +186,7 @@ function Initiate-CAOnboarding{
                 if(($resultAccount|Measure).Count -eq 1){
                     Write-Log "Account already exist with Id = $($resultAccount.id), Address = $($resultAccount.address), Username = $($resultAccount.Username), PlatformId =  = $($resultAccount.platformID)."
                 }elseif(($resultAccount|Measure).Count -eq 0){                  
-                    $resultAccount = Add-PASAccount -SafeName $SafeName -address $Global:config.CAAccountAddress -userName $CA_NTID -platformID $Global:config.CAAccountPlatformID -automaticManagementEnabled $true
+                    $resultAccount = Add-PASAccount -SafeName $SafeName -address $config.CAAccountAddress -userName $CA_NTID -platformID $config.CAAccountPlatformID -automaticManagementEnabled $true
                 }else{
                     throw "Error : Multiple accounts found. count $(($resultAccount|Measure).Count) "
                 }
