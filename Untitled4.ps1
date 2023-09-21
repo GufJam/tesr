@@ -70,8 +70,7 @@ function Initiate-CAOnboarding{
             Write-Log -Object "No inputs in selected CSV."
             return
         }
-
-        Write-Progress -Activity "Getting Information..." -PercentComplete -1
+        
         Write-Log "Input CSV imported."
         #Loop through each memebers to add from input
         $SuccessfulCAAccounts = @()
@@ -283,8 +282,7 @@ function Initiate-CAOnboarding{
         }
 
     }catch{
-        #Handle exceptions for API failures and otjer failures
-        Write-Progress -Activity "Issue Occured..." -Complete
+        #Handle exceptions for API failures and otjer failures 
         Write-Log "ERROR: $($_.Exception.Message)" -ForegroundColor Red
     }
     
