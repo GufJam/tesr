@@ -137,7 +137,7 @@ function Initiate-CAOnboarding{
 
                 if (($CARK_Group_Members|Measure-Object).Count -ne 1) {                        
                     # Check if CARK group contains exactly one member
-                    throw "Multiple members ($(($CARK_Group_Members|Measure-Object).Count)) found in $CARK_Group Group."
+                    throw "($(($CARK_Group_Members|Measure-Object).Count)) members found in $CARK_Group Group."
                 }
                     
                 if ($CARK_Group_Members -inotcontains $NTID_Object) {                    
